@@ -1,72 +1,84 @@
 
 #include <iostream>
 #include <cuda.h>
+#include <cstdlib>
 
 
-/**
-  Allocate this class in CPU/GPU unified memory.  
-  Inherit to always be unified.
-*/
+
 class Unified {
 public:
-/** Allocate instances in CPU/GPU unified memory */
   void *operator new(size_t len) {
-	void *ptr;
-	cudaMallocManaged(&ptr, len);
-	return ptr;
+    void *ptr;
+    cudaMallocManaged(&ptr, len);
+    return ptr;
   }
   void operator delete(void *ptr) {
-	cudaFree(ptr);
+    cudaFree(ptr);
   }
 
-/** Allocate all arrays in CPU/GPU unified memory */
+
   void* operator new[] (std::size_t size) {
-	void *ptr; 
-	cudaMallocManaged(&ptr,size);
-	return ptr;
+    void *ptr;
+    cudaMallocManaged(&ptr,size);
+    return ptr;
   }
   void operator delete[] (void* ptr) {
-	cudaFree(ptr);
+    cudaFree(ptr);
   }
 };
 
 
-// The application would be built with Unified classes,
-//   which are accessible from either CPU or GPU.
-class widget : public Unified 
+class publisher : public Unified
 {
 public:
-	float value;
-
-	/*
-	This method is meant to run on the GPU (__device__)
-	By default methods run on the CPU (__host__)
-	*/
-	__device__ void setValue(float v) { value=v; }
+    float value;
+    __device__ void setValue(float v) { value=v; }
 };
 
-/* GPU kernel: set an array of widgets to a value */
-__global__ void set_array(widget *w,float param) {
-	int i=threadIdx.x + blockIdx.x*blockDim.x; // <- my thread index
-	w[i].setValue(i+param);
+__global__ void publish_msg(publisher *topic,float num) {
+    int i=threadIdx.x + blockIdx.x*blockDim.x;
+    topic[i].setValue(num);
 }
 
-int main(int argc,char *argv[]) 
+class subscriber : public Unified
 {
-// Allocate space shared between CPU and GPU
-	int n=16; // total number of floats
-	widget *w=new widget[n]; // shared array of n values (overloaded new[])
+public:
+    float value;
+    __device__ void getValue(float v) { value=v; }
+};
 
-// Run "GPU kernel" on shared space
-	int nBlocks=1; // GPU thread blocks to run
-	int blockDim=n; // threads/block, should be 256 for best performance
-	set_array<<<nBlocks,blockDim>>>(w,0.1234); /* run kernel on GPU */ 
+/* GPU kernel: set an array of topic to a value */
+__host__ void sub_msg(publisher *topic,int i) {
+      std::cout<<"Topic["<<i<<"] = "<<topic[i].value<<"\n";
+}
 
-	cudaDeviceSynchronize(); /* Wait for kernel to finish filling vals array */
 
-// Show results
-	int i=7;
-	std::cout<<"widget["<<i<<"] = "<<w[i].value<<"\n";
-        return 0;
+int main(int argc,char *argv[])
+{
+
+        int n=1;
+        int i=0;
+        publisher *topic=new publisher[n];
+    worker<<<1,1>>>(topic);
+    //subscribe(topic_out);
+    publish_msg(topic, 6.9);  // gpu kernel recv msg, replies to topic
+    m = recv(topic);  // blocking
+    // m== reply from gpu
+    
+        publish_msg<<<1,1>>>(topic,6.9); /* GPU */
+    //std::cout<<"Topic["<<i<<"] = "<<topic[i].value<<"\n";
+    cudaDeviceSynchronize();
+    sub_msg(topic,i);
+
+       
+
+    i++;
+    publisher *topic1=new publisher[n];
+    publish_msg<<<1,2>>>(topic1,7.7);
+    //std::cout<<"Topic["<<i<<"] = "<<topic1[i].value<<"\n";
+    cudaDeviceSynchronize();
+           sub_msg(topic1,i);
+
+    return 0;
 
 }
